@@ -119,7 +119,8 @@ impl Plugin for HomunculusShadowPanelPlugin {
 fn spawn_directional_light(mut commands: Commands, cameras: Cameras) {
     commands.spawn((
         DirectionalLight {
-            shadows_enabled: true,
+            // 切り分け用（iris-body）: HMCS_NO_SHADOWS=1 なら影を切る
+            shadows_enabled: std::env::var_os("HMCS_NO_SHADOWS").is_none(),
             ..default()
         },
         // Transform::from_rotation(Quat::from_array([-0.1, 0.1, 0., 1.])),
@@ -134,6 +135,10 @@ fn spawn_shadow_panel(
     mut meshes: ResMut<Assets<Mesh>>,
     cameras: Cameras,
 ) {
+    // 切り分け用（iris-body）: HMCS_NO_SHADOW_PANEL=1 なら影を受けるパネルを置かない
+    if std::env::var_os("HMCS_NO_SHADOW_PANEL").is_some() {
+        return;
+    }
     commands.spawn((
         Pickable::IGNORE,
         Name::new("ShadowPanel"),

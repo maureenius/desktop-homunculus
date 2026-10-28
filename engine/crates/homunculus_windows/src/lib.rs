@@ -115,17 +115,57 @@ struct UninitializedCamera;
 fn setup_windows(
     mut commands: Commands,
     monitors: Query<(Entity, &Monitor, Option<&PrimaryMonitor>)>,
-    default_window: Query<Entity, With<PrimaryWindow>>,
+    default_window: Query<(Entity, &Window), With<PrimaryWindow>>,
 ) {
-    let default_window_entity = default_window
+    let (default_window_entity, default_window) = default_window
         .single()
         .expect("failed to obtain the primary window entity");
+    #[cfg(target_os = "macos")]
+    let default_window_scale = default_window.resolution.base_scale_factor();
+    #[cfg(not(target_os = "macos"))]
+    let _ = default_window;
+    // 切り分け用（iris-body）: HMCS_PRIMARY_MONITOR_ONLY=1 なら主モニターにだけウィンドウを作る
+    let primary_only = std::env::var_os("HMCS_PRIMARY_MONITOR_ONLY").is_some();
+    #[cfg(target_os = "macos")]
+    let main_screen_scale = monitors
+        .iter()
+        .find(|(_, _, primary)| primary.is_some())
+        .map_or(1.0, |(_, monitor, _)| monitor.scale_factor as f32);
     for (layer, (monitor_entity, monitor, primary)) in monitors.iter().enumerate() {
+        if primary_only && primary.is_none() {
+            continue;
+        }
         let mut window = create_window(layer, monitor.physical_size().as_vec2());
         let s = monitor.scale_factor as f32;
         let window_position = monitor.physical_position.as_vec2() / s;
-        window.position.set(window_position.as_ivec2());
-        window.resolution.set_scale_factor(s);
+        #[cfg(target_os = "macos")]
+        {
+            // bevy_winit は、ウィンドウ作成時には倍率 1 として物理サイズを受け取り、
+            // 作成後に実際の倍率を掛ける（set_scale_factor_and_apply_to_physical_size）。
+            // 主ウィンドウは起動直後に作成済みのことがあり、その時はすでに実際の倍率を持つ。
+            // 今の倍率を保ったまま論理サイズで指定し、どちらの順でも物理サイズが二重に掛からないようにする。
+            // 元実装は物理サイズと倍率を自前で入れており、Retina ではウィンドウが 2 倍か 1/2 になった。
+            let current_scale = if primary.is_some() {
+                default_window_scale
+            } else {
+                1.0
+            };
+            let logical_size = monitor.physical_size().as_vec2() / s;
+            window.resolution = WindowResolution::default();
+            window.resolution.set_scale_factor(current_scale);
+            window.resolution.set(logical_size.x, logical_size.y);
+            // WindowPosition::At は物理座標として扱われる。macOS の winit は、作成時は主画面の倍率で、
+            // 作成後はウィンドウ自身の倍率で論理座標へ戻す。どちらも主モニターの倍率になるので、
+            // それを掛けておく。掛けないと、倍率の違う副モニターでは位置が半分になる。
+            window
+                .position
+                .set((window_position * main_screen_scale).as_ivec2());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            window.position.set(window_position.as_ivec2());
+            window.resolution.set_scale_factor(s);
+        }
 
         let window_entity = if primary.is_some() {
             default_window_entity

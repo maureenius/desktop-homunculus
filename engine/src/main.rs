@@ -123,8 +123,7 @@ fn main() {
             HomunculusPrefsPlugin,
             HomunculusHttpServerPlugin,
             CefPlugin {
-                command_line_config: CommandLineConfig::default()
-                    .with_switch("disable-web-security"),
+                command_line_config: cef_command_line(),
                 extensions: CefExtensions::new().add("cef-fetch", include_str!("./cef_fetch.js")),
                 root_cache_path: Some(
                     homunculus_dir()
@@ -173,6 +172,19 @@ fn main() {
                 ));
             },
         )
+        // 切り分け用（iris-body）: HMCS_LOG_FPS=1 なら 2 秒ごとの実フレーム数を stderr に出す
+        .add_systems(
+            Update,
+            (|time: Res<Time<Real>>, mut acc: Local<(f64, u32)>| {
+                acc.0 += time.delta_secs_f64();
+                acc.1 += 1;
+                if acc.0 >= 2.0 {
+                    eprintln!("[hmcs-fps] {:.1}", f64::from(acc.1) / acc.0);
+                    *acc = (0.0, 0);
+                }
+            })
+            .run_if(|| std::env::var_os("HMCS_LOG_FPS").is_some()),
+        )
         .add_systems(
             Update,
             (
@@ -188,6 +200,17 @@ fn main() {
             ),
         )
         .run();
+}
+
+/// 切り分け用（iris-body）: 手元ビルドは署名が毎回変わり、CEF のキーチェーン確認で起動が止まる。
+/// HMCS_MOCK_KEYCHAIN=1 の時だけ、CEF にキーチェーンを使わせない。
+fn cef_command_line() -> CommandLineConfig {
+    let config = CommandLineConfig::default().with_switch("disable-web-security");
+    if std::env::var_os("HMCS_MOCK_KEYCHAIN").is_some() {
+        config.with_switch("use-mock-keychain")
+    } else {
+        config
+    }
 }
 
 /// Resolves the asset directory path based on the current platform and build mode.
