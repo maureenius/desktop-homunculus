@@ -180,3 +180,6 @@ result_large_err = "allow"
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(feature, values("cargo-clippy"))',
 ] }
+
+[patch.crates-io]
+bevy_vrm1 = { path = "vendor/bevy_vrm1" }

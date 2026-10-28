@@ -1,0 +1,10 @@
+/target
+/.idea
+/.vscode
+Cargo.lock
+.DS_Store
+/develop/
+docs/plans/
+docs/discussions/
+.serena/
+.claude/memo.md
