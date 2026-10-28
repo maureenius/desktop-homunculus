@@ -280,7 +280,7 @@ fn track_body_tracking(
         let Ok((&head_tf, &head_gtf)) = transforms.get(head.0) else {
             continue;
         };
-        let Ok((rest_tf, rest_gtf)) = rests.get(head.0) else {
+        let Ok((_, rest_gtf)) = rests.get(head.0) else {
             continue;
         };
         let Ok(root_gtf) = root_gtfs.get(root_entity) else {
@@ -290,11 +290,17 @@ fn track_body_tracking(
         let root_rest_rot = *root_rest_rots
             .entry(root_entity)
             .or_insert(root_gtf.rotation());
-        let rest_parent_rot = rest_gtf.rotation() * rest_tf.rotation.inverse();
-        let relative_to_root = root_rest_rot.inverse() * rest_parent_rot;
-        let stable_rotation = root_gtf.rotation() * relative_to_root;
+        // VRM 1.0 lookAt 仕様: LookAt 空間の向きは「head の rest 回転を打ち消した向き」＝モデルの rest の向き。
+        // 元実装は head の親（Neck）の rest のワールド回転を使っており、Neck/Head に 180 度の rest 回転を持つ
+        // （正規化されていない）モデルでは空間が Y 軸まわりに反転し、頭が逆を向く。正規化モデルでは結果は変わらない。
+        let vrm_rest_rot = rests
+            .get(root_entity)
+            .map_or(root_rest_rot, |(_, vrm_rest)| vrm_rest.rotation());
+        let root_delta = root_gtf.rotation() * root_rest_rot.inverse();
+        let stable_rotation = root_delta * vrm_rest_rot;
 
-        let offset = stable_rotation * Vec3::from(properties.offset_from_head_bone);
+        // offsetFromHeadBone は head のローカル座標
+        let offset = root_delta * rest_gtf.rotation() * Vec3::from(properties.offset_from_head_bone);
         let look_at_space = GlobalTransform::from(Transform {
             translation: head_gtf.translation() + offset,
             rotation: stable_rotation,

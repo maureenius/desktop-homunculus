@@ -63,6 +63,7 @@ impl Plugin for LookAtPlugin {
 pub(crate) fn track_looking_target(
     mut commands: Commands,
     vrms: Query<(
+        Entity,
         &LookAt,
         &LookAtProperties,
         &HeadBoneEntity,
@@ -76,18 +77,25 @@ pub(crate) fn track_looking_target(
     cameras: Cameras,
 ) {
     vrms.iter()
-        .for_each(|(look_at, properties, head, left_eye, right_eye)| {
+        .for_each(|(vrm, look_at, properties, head, left_eye, right_eye)| {
             let Ok(head_gtf) = global_transforms.get(head.0) else {
                 return;
             };
-            let Ok(head_tf) = transforms.get(head.0) else {
-                return;
-            };
 
-            let look_at_space = GlobalTransform::default();
-            let mut look_at_space_tf = look_at_space.reparented_to(head_gtf);
-            look_at_space_tf.translation = Vec3::from(properties.offset_from_head_bone);
-            look_at_space_tf.rotation = head_tf.rotation.inverse();
+            // VRM 1.0 lookAt 仕様: LookAt 空間の head からの回転は「model 空間での head の rest 回転の逆」。
+            // 元実装は head の現在のローカル回転の逆を使っており、Neck/Head に 180 度の rest 回転を持つ
+            // （正規化されていない）モデルでは空間が Y 軸まわりに反転し、視線が左右逆になる。
+            let head_rest_in_model = match (rests.get(vrm), rests.get(head.0)) {
+                (Ok((_, vrm_rest)), Ok((_, head_rest))) => {
+                    vrm_rest.rotation().inverse() * head_rest.rotation()
+                }
+                _ => return,
+            };
+            let look_at_space_tf = Transform {
+                translation: Vec3::from(properties.offset_from_head_bone),
+                rotation: head_rest_in_model.inverse(),
+                ..default()
+            };
             let look_at_space = head_gtf.mul_transform(look_at_space_tf);
 
             let (yaw, pitch) = match look_at {
